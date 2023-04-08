@@ -694,10 +694,53 @@ class Ingredient(ExportModelOperationsMixin('ingredient'), models.Model, Permiss
         )
 
 
+class Utensil(
+    ExportModelOperationsMixin("equipment"), models.Model, PermissionModelMixin
+):
+    name = models.CharField(max_length=128, validators=[MinLengthValidator(1)])
+    plural_name = models.CharField(max_length=128, null=True, blank=True, default=None)
+    description = models.TextField(default="", blank=True)
+
+    space = models.ForeignKey(Space, on_delete=models.CASCADE)
+    objects = ScopedManager(space="space")
+
+    def __str__(self):
+        return "%s (%s)" % (self.name, self.space.name)
+
+
+class StepUtensil(
+    ExportModelOperationsMixin("step_utensil"), models.Model, PermissionModelMixin
+):
+    utensil = models.ForeignKey(
+        Utensil, on_delete=models.CASCADE, null=True, blank=True
+    )
+    # usually, one only needs one or an unspecified amount of the utensil. Thus defaulting to "no_amount"
+    no_amount = models.BooleanField(default=True)
+    amount = models.DecimalField(default=0, decimal_places=16, max_digits=32)
+    order = models.IntegerField(default=0)
+
+    def __str__(self):
+        if self.no_amount:
+            return str(self.utensil.name)
+        if self.amount > 1 and self.utensil.plural_name not in (None, ""):
+            utensil = self.utensil.plural_name
+        else:
+            utensil = self.utensil.name
+        return str(self.amount) + ' ' + str(utensil)
+
+
+    class Meta:
+        ordering = ['order', 'pk']
+        indexes = (
+            Index(fields=['id']),
+        )
+
+
 class Step(ExportModelOperationsMixin('step'), models.Model, PermissionModelMixin):
     name = models.CharField(max_length=128, default='', blank=True)
     instruction = models.TextField(blank=True)
     ingredients = models.ManyToManyField(Ingredient, blank=True)
+    utensils = models.ManyToManyField(StepUtensil, blank=True)
     time = models.IntegerField(default=0, blank=True)
     order = models.IntegerField(default=0)
     file = models.ForeignKey('UserFile', on_delete=models.PROTECT, null=True, blank=True)

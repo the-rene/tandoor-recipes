@@ -65,7 +65,7 @@ from cookbook.models import (Automation, BookmarkletImport, CookLog, CustomFilte
                              MealType, Recipe, RecipeBook, RecipeBookEntry, ShareLink, ShoppingList,
                              ShoppingListEntry, ShoppingListRecipe, Space, Step, Storage,
                              Supermarket, SupermarketCategory, SupermarketCategoryRelation, Sync,
-                             SyncLog, Unit, UserFile, UserPreference, UserSpace, ViewLog)
+                             SyncLog, Unit, UserFile, UserPreference, UserSpace, ViewLog, Utensil, StepUtensil)
 from cookbook.provider.dropbox import Dropbox
 from cookbook.provider.local import Local
 from cookbook.provider.nextcloud import Nextcloud
@@ -88,7 +88,8 @@ from cookbook.serializer import (AutomationSerializer, BookmarkletImportListSeri
                                  SupermarketCategorySerializer, SupermarketSerializer,
                                  SyncLogSerializer, SyncSerializer, UnitSerializer,
                                  UserFileSerializer, UserSerializer, UserPreferenceSerializer,
-                                 UserSpaceSerializer, ViewLogSerializer, AccessTokenSerializer, FoodSimpleSerializer, RecipeExportSerializer)
+                                 UserSpaceSerializer, ViewLogSerializer, AccessTokenSerializer, FoodSimpleSerializer,
+                                 RecipeExportSerializer, UtensilSerializer, StepUtensilSerializer)
 from cookbook.views.import_export import get_integration
 from recipes import settings
 
@@ -568,6 +569,22 @@ class FoodViewSet(viewsets.ModelViewSet, TreeMixin):
             content = {'error': True, 'msg': e.args[0]}
             return Response(content, status=status.HTTP_403_FORBIDDEN)
 
+
+class UtensilViewset(viewsets.ModelViewSet):
+    queryset = Utensil.objects
+    model = Utensil
+    serializer_class = UtensilSerializer
+    permission_classes = [CustomIsUser & CustomTokenHasReadWriteScope]
+
+
+class StepUtensilViewset(viewsets.ModelViewSet):
+    queryset = StepUtensil.objects
+    model = StepUtensil
+    serializer_class = StepUtensilSerializer
+    permission_classes = [CustomIsUser & CustomTokenHasReadWriteScope]
+
+    def get_queryset(self):
+        return self.queryset.filter(utensil__space=self.request.space)
 
 class RecipeBookViewSet(viewsets.ModelViewSet, StandardFilterMixin):
     queryset = RecipeBook.objects

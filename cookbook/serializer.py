@@ -20,7 +20,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import NotFound, ValidationError
 
 from cookbook.helper.CustomStorageClass import CachedS3Boto3Storage
-from cookbook.helper.HelperFunctions import str2bool
+from cookbook.helper.HelperFunctions import str2bool, get_duplicate_object_with_plural
 from cookbook.helper.permission_helper import above_space_limit
 from cookbook.helper.shopping_helper import RecipeShoppingEditor
 from cookbook.models import (Automation, BookmarkletImport, Comment, CookLog, CustomFilter,
@@ -29,7 +29,8 @@ from cookbook.models import (Automation, BookmarkletImport, Comment, CookLog, Cu
                              RecipeBookEntry, RecipeImport, ShareLink, ShoppingList,
                              ShoppingListEntry, ShoppingListRecipe, Space, Step, Storage,
                              Supermarket, SupermarketCategory, SupermarketCategoryRelation, Sync,
-                             SyncLog, Unit, UserFile, UserPreference, UserSpace, ViewLog)
+                             SyncLog, Unit, UserFile, UserPreference, UserSpace, ViewLog, Utensil,
+                             StepUtensil)
 from cookbook.templatetags.custom_tags import markdown
 from recipes.settings import AWS_ENABLED, MEDIA_URL
 
@@ -552,8 +553,8 @@ class FoodSerializer(UniqueFieldsMixin, WritableNestedModelSerializer, ExtendedR
         if plural_name := validated_data.pop('plural_name', None):
             plural_name = plural_name.strip()
 
-        if food := Food.objects.filter(Q(name=name) | Q(plural_name=name)).first():
-            return food
+        if duplicate := get_duplicate_object_with_plural(Food, name):
+            return duplicate
 
         space = validated_data.pop('space', self.context['request'].space)
         # supermarket category needs to be handled manually as food.get or create does not create nested serializers unlike a super.create of serializer
@@ -643,10 +644,66 @@ class IngredientSerializer(IngredientSimpleSerializer):
     food = FoodSerializer(allow_null=True)
 
 
+class UtensilSerializer(WritableNestedModelSerializer):
+    def create(self, validated_data):
+        name = validated_data.pop("name").strip()
+
+        if plural_name := validated_data.pop("plural_name", None):
+            plural_name = plural_name.strip()
+
+        if duplicate := get_duplicate_object_with_plural(Utensil, name):
+            return duplicate
+
+        space = validated_data.pop("space", self.context["request"].space)
+
+        obj, created = Utensil.objects.get_or_create(
+            name=name, plural_name=plural_name, space=space, defaults=validated_data
+        )
+        return obj
+
+    def update(self, instance, validated_data):
+        if name := validated_data.get('name', None):
+            validated_data['name'] = name.strip()
+        if plural_name := validated_data.get('plural_name', None):
+            validated_data['plural_name'] = plural_name.strip()
+        saved_instance = super(UtensilSerializer, self).update(instance, validated_data)
+        return saved_instance
+
+    class Meta:
+        model = Utensil
+        fields = (
+            "id",
+            "name",
+            "plural_name",
+            "description",
+        )
+        read_only_fields = ("id",)
+
+
+class StepUtensilSerializer(WritableNestedModelSerializer):
+    utensil = UtensilSerializer()
+
+    def create(self, validated_data):
+        validated_data['space'] = self.context['request'].space
+        return super().create(validated_data)
+
+    class Meta:
+        model = StepUtensil
+        fields = (
+            "id",
+            "utensil",
+            "amount",
+            "no_amount",
+            "order",
+        )
+        read_only_fields = ("id",)
+
+
 class StepSerializer(WritableNestedModelSerializer, ExtendedRecipeMixin):
     ingredients = IngredientSerializer(many=True)
     ingredients_markdown = serializers.SerializerMethodField('get_ingredients_markdown')
     ingredients_vue = serializers.SerializerMethodField('get_ingredients_vue')
+    utensils = StepUtensilSerializer(many=True, required=False)
     file = UserFileViewSerializer(allow_null=True, required=False)
     step_recipe_data = serializers.SerializerMethodField('get_step_recipe_data')
     recipe_filter = 'steps'
@@ -674,7 +731,8 @@ class StepSerializer(WritableNestedModelSerializer, ExtendedRecipeMixin):
         model = Step
         fields = (
             'id', 'name', 'instruction', 'ingredients', 'ingredients_markdown',
-            'ingredients_vue', 'time', 'order', 'show_as_header', 'file', 'step_recipe', 'step_recipe_data', 'numrecipe'
+            'ingredients_vue', 'utensils', 'time', 'order', 'show_as_header', 'file',
+            'step_recipe', 'step_recipe_data', 'numrecipe'
         )
 
 
@@ -1089,13 +1147,19 @@ class InviteLinkSerializer(WritableNestedModelSerializer):
 
         if obj.email:
             try:
-                if InviteLink.objects.filter(space=self.context['request'].space, created_at__gte=datetime.now() - timedelta(hours=4)).count() < 20:
-                    message = _('Hello') + '!\n\n' + _('You have been invited by ') + escape(self.context['request'].user.get_user_display_name())
-                    message += _(' to join their Tandoor Recipes space ') + escape(self.context['request'].space.name) + '.\n\n'
-                    message += _('Click the following link to activate your account: ') + self.context['request'].build_absolute_uri(reverse('view_invite', args=[str(obj.uuid)])) + '\n\n'
-                    message += _('If the link does not work use the following code to manually join the space: ') + str(obj.uuid) + '\n\n'
+                if InviteLink.objects.filter(space=self.context['request'].space,
+                                             created_at__gte=datetime.now() - timedelta(hours=4)).count() < 20:
+                    message = _('Hello') + '!\n\n' + _('You have been invited by ') + escape(
+                        self.context['request'].user.get_user_display_name())
+                    message += _(' to join their Tandoor Recipes space ') + escape(
+                        self.context['request'].space.name) + '.\n\n'
+                    message += _('Click the following link to activate your account: ') + self.context[
+                        'request'].build_absolute_uri(reverse('view_invite', args=[str(obj.uuid)])) + '\n\n'
+                    message += _('If the link does not work use the following code to manually join the space: ') + str(
+                        obj.uuid) + '\n\n'
                     message += _('The invitation is valid until ') + str(obj.valid_until) + '\n\n'
-                    message += _('Tandoor Recipes is an Open Source recipe manager. Check it out on GitHub ') + 'https://github.com/vabene1111/recipes/'
+                    message += _(
+                        'Tandoor Recipes is an Open Source recipe manager. Check it out on GitHub ') + 'https://github.com/vabene1111/recipes/'
 
                     send_mail(
                         _('Tandoor Recipes Invite'),

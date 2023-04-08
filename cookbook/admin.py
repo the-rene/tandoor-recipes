@@ -15,7 +15,7 @@ from .models import (BookmarkletImport, Comment, CookLog, Food, FoodInheritField
                      Recipe, RecipeBook, RecipeBookEntry, RecipeImport, SearchPreference, ShareLink,
                      ShoppingList, ShoppingListEntry, ShoppingListRecipe, Space, Step, Storage,
                      Supermarket, SupermarketCategory, SupermarketCategoryRelation, Sync, SyncLog,
-                     TelegramBot, Unit, UserFile, UserPreference, ViewLog, Automation, UserSpace)
+                     TelegramBot, Unit, UserFile, UserPreference, ViewLog, Automation, UserSpace, Utensil, StepUtensil)
 
 
 class CustomUserAdmin(UserAdmin):
@@ -179,7 +179,8 @@ class RecipeAdmin(admin.ModelAdmin):
     def created_by(obj):
         return obj.created_by.get_user_display_name()
 
-    if settings.DATABASES['default']['ENGINE'] in ['django.db.backends.postgresql_psycopg2', 'django.db.backends.postgresql']:
+    if settings.DATABASES['default']['ENGINE'] in ['django.db.backends.postgresql_psycopg2',
+                                                   'django.db.backends.postgresql']:
         actions = [rebuild_index]
 
 
@@ -207,6 +208,22 @@ class IngredientAdmin(admin.ModelAdmin):
 
 
 admin.site.register(Ingredient, IngredientAdmin)
+
+
+class UtensilAdmin(admin.ModelAdmin):
+    list_display = ('name',)
+    search_fields = ('name',)
+
+
+admin.site.register(Utensil, UtensilAdmin)
+
+
+class StepUtensilAdmin(admin.ModelAdmin):
+    list_display = ('utensil', 'order')
+    search_fields = ('utensil',)
+
+
+admin.site.register(StepUtensil, StepUtensilAdmin)
 
 
 class CommentAdmin(admin.ModelAdmin):
